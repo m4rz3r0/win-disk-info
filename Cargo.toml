@@ -1,0 +1,10 @@
+[package]
+name = "win-disk-info"
+version = "0.1.0"
+edition = "2021"
+authors = ["m4rz3r0", "Grupo de Ingeniería de Medios (GIM UEx)"]
+
+[dependencies]
+sha256 = "1.5.0"
+windows = "0.59.0"
+wmi = "0.15.0"
