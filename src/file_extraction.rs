@@ -5,6 +5,7 @@ use walkdir::WalkDir;
 
 use crate::FileEntry;
 
+/// Gets all files in a directory
 pub fn get_files(path: &str) -> Result<Vec<FileEntry>, walkdir::Error> {
     let mut files = Vec::new();
     for entry in WalkDir::new(path) {
