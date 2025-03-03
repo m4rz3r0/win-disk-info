@@ -1,16 +1,46 @@
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
+use std::path::Path;
+use std::{ffi::OsStr, path::PathBuf};
+use chrono::{DateTime, Local};
+use walkdir::DirEntry;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct FileEntry {
-    path: PathBuf,
-    size: usize,
-    magic_bytes: Vec<u8>,
-    hash: Option<String>,
-    suspicious: bool,
+    pub path: PathBuf,
+    pub name: String,
+    pub size: u64,
+    pub modified: DateTime<Local>,
+    pub is_hidden: bool,
+    pub extension: Option<String>,
 }
+
+impl From<DirEntry> for FileEntry {
+    fn from(entry: DirEntry) -> Self {
+        let path = entry.path().to_path_buf();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let metadata = entry.metadata().unwrap_or_else(|_| panic!("No se pudo obtener metadata para {}", path.display()));
+        
+        let size = metadata.len();
+        
+        // Convertir SystemTime a DateTime<Local>
+        let modified = metadata.modified()
+            .map(|time| DateTime::<Local>::from(time))
+            .unwrap_or_else(|_| Local::now());
+        
+        let is_hidden = name.starts_with('.');
+        let extension = path.extension()
+            .map(|ext| ext.to_string_lossy().to_string());
+        
+        FileEntry {
+            path,
+            name,
+            size,
+            modified,
+            is_hidden,
+            extension,
+        }
+    }
+}
+
 
 impl FileEntry {
     pub fn name(&self) -> &OsStr {
@@ -31,33 +61,11 @@ impl FileEntry {
         self.path.clone()
     }
 
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> u64 {
         self.size
     }
 
-    pub fn magic_bytes(&self) -> &[u8] {
-        &self.magic_bytes
-    }
-
-    pub fn set_magic_bytes(&mut self, bytes: &[u8]) {
-        self.magic_bytes = bytes.to_vec();
-    }
-
-    pub fn hash(&self) -> Option<&String> {
-        self.hash.as_ref()
-    }
-
-    pub fn suspicious(&self) -> bool {
-        self.suspicious
-    }
-
-    pub fn set_suspicious(&mut self) {
-        self.suspicious = true;
-    }
-
-    pub fn calculate_hash(&mut self) {
-        self.hash = sha256::try_digest(self.path())
-            .ok()
-            .map(|hash| hash.to_string());
+    pub fn modified(&self) -> DateTime<Local> {
+        self.modified
     }
 }

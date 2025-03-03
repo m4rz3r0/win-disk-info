@@ -1,9 +1,9 @@
 mod disk;
+mod disk_error;
 mod file;
 mod partition;
-mod disk_error;
 
 pub use disk::{Disk, DiskKind};
+pub use disk_error::DiskError;
 pub use file::FileEntry;
 pub use partition::{FileSystem, Partition};
-pub use disk_error::DiskError;

@@ -1,6 +1,6 @@
+use crate::{Disk, DiskError, DiskKind, FileSystem, Partition};
 use std::collections::HashMap;
 use wmi::{COMLibrary, Variant, WMIConnection};
-use crate::{Disk, DiskError, DiskKind, FileSystem, Partition};
 
 /// Constants for WMI queries and paths
 const WMI_STORAGE_NAMESPACE: &str = "ROOT\\Microsoft\\Windows\\Storage";
@@ -41,20 +41,20 @@ fn update_disk_info(
         "SELECT * FROM MSFT_PhysicalDisk WHERE DeviceId = '{}'",
         extract_disk_number(device_id)
     );
-    
+
     let results: Vec<HashMap<String, Variant>> = wmi_storage_con.raw_query(query)?;
-    
+
     if let Some(storage_info) = results.first() {
         // Update model if available
         if let Some(Variant::String(model)) = storage_info.get("Model") {
             disk_info.insert("Model".to_string(), Variant::String(model.clone()));
         }
-        
+
         // Update serial number from FruId if available
         if let Some(Variant::String(fru_id)) = storage_info.get("FruId") {
             disk_info.insert("SerialNumber".to_string(), Variant::String(fru_id.clone()));
         }
-        
+
         // Update media type/kind if available
         if let Some(Variant::UI2(media_type)) = storage_info.get("MediaType") {
             disk_info.insert("Kind".to_string(), Variant::UI2(*media_type));
@@ -63,7 +63,8 @@ fn update_disk_info(
 
     // Check for removable media capability
     if let Some(Variant::Array(capabilities)) = disk_info.get("CapabilityDescriptions") {
-        let is_removable = capabilities.contains(&Variant::String(REMOVABLE_MEDIA_CAPABILITY.to_string()));
+        let is_removable =
+            capabilities.contains(&Variant::String(REMOVABLE_MEDIA_CAPABILITY.to_string()));
         disk_info.insert("Removable".to_string(), Variant::Bool(is_removable));
     }
 
@@ -115,11 +116,15 @@ pub fn get_disks() -> Result<Vec<Disk>, DiskError> {
     let wmi_storage_con = WMIConnection::with_namespace_path(WMI_STORAGE_NAMESPACE, com_con)?;
     let wmi_con = WMIConnection::new(com_con)?;
 
-    let disks_wmi: Vec<HashMap<String, Variant>> = wmi_con.raw_query("SELECT * FROM Win32_DiskDrive")?;
-    
+    let disks_wmi: Vec<HashMap<String, Variant>> =
+        wmi_con.raw_query("SELECT * FROM Win32_DiskDrive")?;
+
     let mut partition_count = 0;
-    let disks = disks_wmi.iter()
-        .filter_map(|disk_wmi| process_disk(&wmi_con, &wmi_storage_con, disk_wmi, &mut partition_count))
+    let disks = disks_wmi
+        .iter()
+        .filter_map(|disk_wmi| {
+            process_disk(&wmi_con, &wmi_storage_con, disk_wmi, &mut partition_count)
+        })
         .collect();
 
     Ok(disks)
@@ -140,7 +145,10 @@ fn process_disk(
     }
 
     // Get disk properties
-    let device_name = get_string_value(&disk_info, "Caption")?.split_whitespace().collect::<Vec<_>>().join(" ");
+    let device_name = get_string_value(&disk_info, "Caption")?
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let model = get_string_value(&disk_info, "Model")?;
     let serial = get_string_value(&disk_info, "SerialNumber")?;
     let kind = get_disk_kind(&disk_info)?;
@@ -151,7 +159,15 @@ fn process_disk(
     let device_id = get_string_value(&disk_info, "DeviceID")?;
     let partitions = get_partitions(wmi_con, &device_id, partition_count).ok()?;
 
-    Some(Disk::new(device_name, model, serial, kind, size, removable, partitions))
+    Some(Disk::new(
+        device_name,
+        model,
+        serial,
+        kind,
+        size,
+        removable,
+        partitions,
+    ))
 }
 
 /// Get partitions for a disk
@@ -167,7 +183,8 @@ fn get_partitions(
 
     let results: Vec<HashMap<String, Variant>> = wmi_con.raw_query(query)?;
 
-    let partitions = results.iter()
+    let partitions = results
+        .iter()
         .filter_map(|result| process_partition(wmi_con, result, partition_count))
         .collect();
 
@@ -186,7 +203,7 @@ fn process_partition(
     let name = get_string_value(&logical_disk, "Name")?;
     let file_system = get_string_value(&logical_disk, "FileSystem")?;
     let mount_path = format!("{}\\", get_string_value(&logical_disk, "DeviceID")?);
-    
+
     let file_system = create_file_system(&file_system, &mount_path)?;
     let total_space = get_u64_value(&logical_disk, "Size")?;
     let available_space = get_u64_value(&logical_disk, "FreeSpace")?;
@@ -231,6 +248,141 @@ pub(super) fn create_file_system(fs_type: &str, mount_path: &str) -> Option<File
         SupportedFileSystem::NTFS => Some(FileSystem::NTFS(mount_path)),
         SupportedFileSystem::FAT32 => Some(FileSystem::FAT32(mount_path)),
         SupportedFileSystem::EXFAT => Some(FileSystem::EXFAT(mount_path)),
-        SupportedFileSystem::NotImplemented(fs) => Some(FileSystem::NotImplemented(fs, mount_path))
+        SupportedFileSystem::NotImplemented(fs) => Some(FileSystem::NotImplemented(fs, mount_path)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn test_extract_disk_number() {
+        assert_eq!(extract_disk_number("\\\\.\\PHYSICALDRIVE0"), 0);
+        assert_eq!(extract_disk_number("\\\\.\\PHYSICALDRIVE1"), 1);
+        assert_eq!(extract_disk_number("\\\\.\\PHYSICALDRIVE10"), 10);
+        assert_eq!(extract_disk_number("invalid"), 0);
+        assert_eq!(extract_disk_number("\\\\.\\PHYSICALDRIVE"), 0);
+        assert_eq!(extract_disk_number("\\\\.\\PHYSICALDRIVEabc"), 0);
+    }
+
+    #[test]
+    fn test_get_string_value() {
+        let mut map = HashMap::new();
+        map.insert("key1".to_string(), Variant::String("value1".to_string()));
+        map.insert("key2".to_string(), Variant::UI4(42));
+
+        assert_eq!(get_string_value(&map, "key1"), Some("value1".to_string()));
+        assert_eq!(get_string_value(&map, "key2"), None);
+        assert_eq!(get_string_value(&map, "key3"), None);
+    }
+
+    #[test]
+    fn test_get_u64_value() {
+        let mut map = HashMap::new();
+        map.insert("key1".to_string(), Variant::UI8(1234567890));
+        map.insert(
+            "key2".to_string(),
+            Variant::String("not_a_number".to_string()),
+        );
+
+        assert_eq!(get_u64_value(&map, "key1"), Some(1234567890));
+        assert_eq!(get_u64_value(&map, "key2"), None);
+        assert_eq!(get_u64_value(&map, "key3"), None);
+    }
+
+    #[test]
+    fn test_get_bool_value() {
+        let mut map = HashMap::new();
+        map.insert("key1".to_string(), Variant::Bool(true));
+        map.insert("key2".to_string(), Variant::Bool(false));
+        map.insert(
+            "key3".to_string(),
+            Variant::String("not_a_bool".to_string()),
+        );
+
+        assert_eq!(get_bool_value(&map, "key1"), Some(true));
+        assert_eq!(get_bool_value(&map, "key2"), Some(false));
+        assert_eq!(get_bool_value(&map, "key3"), None);
+        assert_eq!(get_bool_value(&map, "key4"), None);
+    }
+
+    #[test]
+    fn test_supported_filesystem_from() {
+        assert_eq!(SupportedFileSystem::from("NTFS"), SupportedFileSystem::NTFS);
+        assert_eq!(
+            SupportedFileSystem::from("FAT32"),
+            SupportedFileSystem::FAT32
+        );
+        assert_eq!(
+            SupportedFileSystem::from("exFAT"),
+            SupportedFileSystem::EXFAT
+        );
+
+        match SupportedFileSystem::from("XFS") {
+            SupportedFileSystem::NotImplemented(fs) => assert_eq!(fs, "XFS"),
+            _ => panic!("Expected NotImplemented variant"),
+        }
+    }
+
+    #[test]
+    fn test_create_file_system() {
+        match create_file_system("NTFS", "C:\\") {
+            Some(FileSystem::NTFS(path)) => assert_eq!(path, PathBuf::from("C:\\")),
+            _ => panic!("Expected NTFS file system"),
+        }
+
+        match create_file_system("FAT32", "D:\\") {
+            Some(FileSystem::FAT32(path)) => assert_eq!(path, PathBuf::from("D:\\")),
+            _ => panic!("Expected FAT32 file system"),
+        }
+
+        match create_file_system("exFAT", "E:\\") {
+            Some(FileSystem::EXFAT(path)) => assert_eq!(path, PathBuf::from("E:\\")),
+            _ => panic!("Expected EXFAT file system"),
+        }
+
+        match create_file_system("EXT4", "F:\\") {
+            Some(FileSystem::NotImplemented(fs, path)) => {
+                assert_eq!(fs, "EXT4");
+                assert_eq!(path, PathBuf::from("F:\\"));
+            }
+            _ => panic!("Expected NotImplemented file system"),
+        }
+    }
+
+    #[test]
+    fn test_get_disk_kind() {
+        let mut map = HashMap::new();
+
+        // Test HDD
+        map.insert("Kind".to_string(), Variant::UI2(MEDIA_TYPE_HDD));
+        assert_eq!(get_disk_kind(&map), Some(DiskKind::HDD));
+
+        // Test SSD
+        map.insert("Kind".to_string(), Variant::UI2(MEDIA_TYPE_SSD));
+        assert_eq!(get_disk_kind(&map), Some(DiskKind::SSD));
+
+        // Test SCM
+        map.insert("Kind".to_string(), Variant::UI2(MEDIA_TYPE_SCM));
+        assert_eq!(get_disk_kind(&map), Some(DiskKind::SCM));
+
+        // Test unknown type
+        map.insert("Kind".to_string(), Variant::UI2(10));
+        if let Some(DiskKind::Unknown(kind)) = get_disk_kind(&map) {
+            assert_eq!(kind, 10);
+        } else {
+            panic!("Expected Unknown disk kind");
+        }
+
+        // Test missing kind
+        map.remove("Kind");
+        if let Some(DiskKind::Unknown(kind)) = get_disk_kind(&map) {
+            assert_eq!(kind, -1);
+        } else {
+            panic!("Expected Unknown disk kind with value -1");
+        }
     }
 }

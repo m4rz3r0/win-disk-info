@@ -5,6 +5,9 @@ edition = "2021"
 authors = ["m4rz3r0", "Grupo de Ingeniería de Medios (GIM UEx)"]
 
 [dependencies]
+chrono = "0.4.40"
 sha256 = "1.5.0"
+tempfile = "3.17.1"
+walkdir = "2.5.0"
 windows = "0.59.0"
 wmi = "0.15.0"
