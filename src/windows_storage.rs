@@ -7,13 +7,13 @@ const WMI_STORAGE_NAMESPACE: &str = "ROOT\\Microsoft\\Windows\\Storage";
 const REMOVABLE_MEDIA_CAPABILITY: &str = "Supports Removable Media";
 
 /// Media type constants
-const MEDIA_TYPE_HDD: u16 = 3;
-const MEDIA_TYPE_SSD: u16 = 4;
-const MEDIA_TYPE_SCM: u16 = 5;
+pub(super) const MEDIA_TYPE_HDD: u16 = 3;
+pub(super) const MEDIA_TYPE_SSD: u16 = 4;
+pub(super) const MEDIA_TYPE_SCM: u16 = 5;
 
 /// Supported file systems
 #[derive(Debug, PartialEq)]
-enum SupportedFileSystem {
+pub(super) enum SupportedFileSystem {
     NTFS,
     FAT32,
     EXFAT,
@@ -71,7 +71,7 @@ fn update_disk_info(
 }
 
 /// Get disk kind from media type
-fn get_disk_kind(disk_info: &HashMap<String, Variant>) -> Option<DiskKind> {
+pub fn get_disk_kind(disk_info: &HashMap<String, Variant>) -> Option<DiskKind> {
     match disk_info.get("Kind") {
         Some(Variant::UI2(media_type)) => match *media_type {
             MEDIA_TYPE_HDD => Some(DiskKind::HDD),
@@ -101,7 +101,7 @@ fn get_logical_disk(
 // Additional helper functions
 
 /// Extract disk number from device ID
-fn extract_disk_number(device_id: &str) -> u32 {
+pub(super) fn extract_disk_number(device_id: &str) -> u32 {
     device_id
         .split('\\')
         .last()
@@ -204,28 +204,28 @@ fn process_partition(
 }
 
 // Helper functions
-fn get_string_value(map: &HashMap<String, Variant>, key: &str) -> Option<String> {
+pub(super) fn get_string_value(map: &HashMap<String, Variant>, key: &str) -> Option<String> {
     match map.get(key) {
         Some(Variant::String(value)) => Some(value.clone()),
         _ => None,
     }
 }
 
-fn get_u64_value(map: &HashMap<String, Variant>, key: &str) -> Option<u64> {
+pub(super) fn get_u64_value(map: &HashMap<String, Variant>, key: &str) -> Option<u64> {
     match map.get(key) {
         Some(Variant::UI8(value)) => Some(*value),
         _ => None,
     }
 }
 
-fn get_bool_value(map: &HashMap<String, Variant>, key: &str) -> Option<bool> {
+pub(super) fn get_bool_value(map: &HashMap<String, Variant>, key: &str) -> Option<bool> {
     match map.get(key) {
         Some(Variant::Bool(value)) => Some(*value),
         _ => None,
     }
 }
 
-fn create_file_system(fs_type: &str, mount_path: &str) -> Option<FileSystem> {
+pub(super) fn create_file_system(fs_type: &str, mount_path: &str) -> Option<FileSystem> {
     let mount_path = mount_path.into();
     match SupportedFileSystem::from(fs_type) {
         SupportedFileSystem::NTFS => Some(FileSystem::NTFS(mount_path)),
