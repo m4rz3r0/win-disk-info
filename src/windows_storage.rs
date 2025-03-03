@@ -17,6 +17,7 @@ enum SupportedFileSystem {
     NTFS,
     FAT32,
     EXFAT,
+    NotImplemented(String),
 }
 
 impl From<&str> for SupportedFileSystem {
@@ -25,7 +26,7 @@ impl From<&str> for SupportedFileSystem {
             "NTFS" => Self::NTFS,
             "FAT32" => Self::FAT32,
             "exFAT" => Self::EXFAT,
-            _ => panic!("Unsupported file system: {}", s),
+            _ => Self::NotImplemented(s.to_string()),
         }
     }
 }
@@ -230,5 +231,6 @@ fn create_file_system(fs_type: &str, mount_path: &str) -> Option<FileSystem> {
         SupportedFileSystem::NTFS => Some(FileSystem::NTFS(mount_path)),
         SupportedFileSystem::FAT32 => Some(FileSystem::FAT32(mount_path)),
         SupportedFileSystem::EXFAT => Some(FileSystem::EXFAT(mount_path)),
+        SupportedFileSystem::NotImplemented(fs) => Some(FileSystem::NotImplemented(fs, mount_path))
     }
 }
