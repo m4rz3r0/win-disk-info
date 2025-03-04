@@ -6,17 +6,24 @@ use wmi::{COMLibrary, Variant, WMIConnection};
 const WMI_STORAGE_NAMESPACE: &str = "ROOT\\Microsoft\\Windows\\Storage";
 const REMOVABLE_MEDIA_CAPABILITY: &str = "Supports Removable Media";
 
-/// Media type constants
-pub(super) const MEDIA_TYPE_HDD: u16 = 3;
-pub(super) const MEDIA_TYPE_SSD: u16 = 4;
-pub(super) const MEDIA_TYPE_SCM: u16 = 5;
+/// Media type constants for Windows disk drives
+const MEDIA_TYPE_HDD: u16 = 3;
+const MEDIA_TYPE_SSD: u16 = 4;
+const MEDIA_TYPE_SCM: u16 = 5;
 
-/// Supported file systems
+/// Supported file systems on Windows platforms
+///
+/// This enum represents the file systems that are explicitly supported
+/// by this application, with a fallback for other file systems.
 #[derive(Debug, PartialEq)]
-pub(super) enum SupportedFileSystem {
+enum SupportedFileSystem {
+    /// NTFS (New Technology File System)
     NTFS,
+    /// FAT32 (File Allocation Table - 32-bit)
     FAT32,
+    /// exFAT (Extended File Allocation Table)
     EXFAT,
+    /// Any other file system not explicitly supported
     NotImplemented(String),
 }
 
@@ -31,15 +38,29 @@ impl From<&str> for SupportedFileSystem {
     }
 }
 
-/// Update disk information from storage namespace
+/// Updates a disk's information using Windows Storage WMI namespace
+///
+/// This function enriches the disk information by querying the Windows
+/// storage namespace for additional details like the model name,
+/// serial number, and media type.
+///
+/// # Arguments
+/// * `wmi_storage_con` - A WMI connection to the storage namespace
+/// * `disk_info` - The disk information to update
+/// * `device_id` - The device ID of the disk
+///
+/// # Returns
+/// * `Ok(())` - If the update was successful
+/// * `Err(DiskError)` - If there was an error during the update
 fn update_disk_info(
     wmi_storage_con: &WMIConnection,
     disk_info: &mut HashMap<String, Variant>,
     device_id: &str,
 ) -> Result<(), DiskError> {
+    let disk_number = extract_disk_number(device_id);
     let query = format!(
         "SELECT * FROM MSFT_PhysicalDisk WHERE DeviceId = '{}'",
-        extract_disk_number(device_id)
+        disk_number
     );
 
     let results: Vec<HashMap<String, Variant>> = wmi_storage_con.raw_query(query)?;
@@ -71,7 +92,13 @@ fn update_disk_info(
     Ok(())
 }
 
-/// Get disk kind from media type
+/// Determines the disk kind (HDD, SSD, etc.) from WMI information
+///
+/// # Arguments
+/// * `disk_info` - Hash map containing disk information from WMI
+///
+/// # Returns
+/// * `Option<DiskKind>` - The detected disk kind, or Unknown if not determinable
 pub fn get_disk_kind(disk_info: &HashMap<String, Variant>) -> Option<DiskKind> {
     match disk_info.get("Kind") {
         Some(Variant::UI2(media_type)) => match *media_type {
@@ -84,7 +111,19 @@ pub fn get_disk_kind(disk_info: &HashMap<String, Variant>) -> Option<DiskKind> {
     }
 }
 
-/// Get logical disk information for a partition
+/// Retrieves logical disk information for a partition
+///
+/// This function uses WMI to find the logical disk associated with a partition,
+/// which provides information like drive letters and file system.
+///
+/// # Arguments
+/// * `wmi_con` - A WMI connection
+/// * `partition_id` - The device ID of the partition
+///
+/// # Returns
+/// * `Ok(Some(HashMap))` - Logical disk information if found
+/// * `Ok(None)` - If no logical disk is associated with the partition
+/// * `Err(DiskError)` - If there was an error querying WMI
 fn get_logical_disk(
     wmi_con: &WMIConnection,
     partition_id: &str,
@@ -99,10 +138,14 @@ fn get_logical_disk(
     Ok(results.into_iter().next())
 }
 
-// Additional helper functions
-
-/// Extract disk number from device ID
-pub(super) fn extract_disk_number(device_id: &str) -> u32 {
+/// Extracts the disk number from a Windows device ID
+///
+/// # Arguments
+/// * `device_id` - The device ID string (e.g., "\\\\.\\PHYSICALDRIVE0")
+///
+/// # Returns
+/// * `u32` - The extracted disk number, or 0 if parsing fails
+fn extract_disk_number(device_id: &str) -> u32 {
     device_id
         .split('\\')
         .last()
@@ -110,7 +153,28 @@ pub(super) fn extract_disk_number(device_id: &str) -> u32 {
         .unwrap_or(0)
 }
 
-/// Get all disk information from the system
+/// Retrieves information about all physical disks in the system
+///
+/// This function uses WMI to query for all disk drives in the system,
+/// including their partitions, file systems, and other details.
+///
+/// # Returns
+/// * `Ok(Vec<Disk>)` - A collection of all disks found
+/// * `Err(DiskError)` - If there was an error querying disk information
+///
+/// # Example
+/// ```
+/// use win_disk_info::get_disks;
+///
+/// match get_disks() {
+///     Ok(disks) => {
+///         for disk in disks {
+///             println!("{:?}", disk);
+///         }
+///     },
+///     Err(e) => eprintln!("Error getting disks: {}", e),
+/// }
+/// ```
 pub fn get_disks() -> Result<Vec<Disk>, DiskError> {
     let com_con = COMLibrary::new()?;
     let wmi_storage_con = WMIConnection::with_namespace_path(WMI_STORAGE_NAMESPACE, com_con)?;
@@ -130,7 +194,16 @@ pub fn get_disks() -> Result<Vec<Disk>, DiskError> {
     Ok(disks)
 }
 
-/// Process a single disk from WMI data
+/// Processes a single disk from WMI data into a Disk struct
+///
+/// # Arguments
+/// * `wmi_con` - WMI connection for standard namespace
+/// * `wmi_storage_con` - WMI connection for storage namespace
+/// * `disk_wmi` - Raw disk data from WMI
+/// * `partition_count` - Running count of partitions (modified by this function)
+///
+/// # Returns
+/// * `Option<Disk>` - The processed disk, or None if processing failed
 fn process_disk(
     wmi_con: &WMIConnection,
     wmi_storage_con: &WMIConnection,
@@ -141,7 +214,9 @@ fn process_disk(
 
     // Update disk information from storage namespace
     if let Some(device_id) = get_string_value(&disk_info, "DeviceID") {
-        update_disk_info(wmi_storage_con, &mut disk_info, &device_id).ok()?;
+        if let Err(_) = update_disk_info(wmi_storage_con, &mut disk_info, &device_id) {
+            return None;
+        }
     }
 
     // Get disk properties
@@ -157,7 +232,10 @@ fn process_disk(
 
     // Get partitions
     let device_id = get_string_value(&disk_info, "DeviceID")?;
-    let partitions = get_partitions(wmi_con, &device_id, partition_count).ok()?;
+    let partitions = match get_partitions(wmi_con, &device_id, partition_count) {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
 
     Some(Disk::new(
         device_name,
@@ -170,7 +248,15 @@ fn process_disk(
     ))
 }
 
-/// Get partitions for a disk
+/// Retrieves all partitions for a disk
+///
+/// # Arguments
+/// * `wmi_con` - WMI connection
+/// * `device_id` - Disk device ID
+/// * `partition_count` - Running count of partitions (modified by this function)
+///
+/// # Returns
+/// * `Result<Vec<Partition>, DiskError>` - The partitions or an error
 fn get_partitions(
     wmi_con: &WMIConnection,
     device_id: &str,
@@ -191,7 +277,15 @@ fn get_partitions(
     Ok(partitions)
 }
 
-/// Process a single partition
+/// Processes a single partition from WMI data
+///
+/// # Arguments
+/// * `wmi_con` - WMI connection
+/// * `partition_data` - Raw partition data from WMI
+/// * `partition_count` - Running count of partitions (modified by this function)
+///
+/// # Returns
+/// * `Option<Partition>` - The processed partition, or None if processing failed
 fn process_partition(
     wmi_con: &WMIConnection,
     partition_data: &HashMap<String, Variant>,
@@ -220,29 +314,62 @@ fn process_partition(
     Some(partition)
 }
 
-// Helper functions
-pub(super) fn get_string_value(map: &HashMap<String, Variant>, key: &str) -> Option<String> {
+// Helper functions for extracting values from WMI data
+
+/// Extracts a string value from a WMI variant map
+///
+/// # Arguments
+/// * `map` - The WMI data map
+/// * `key` - Key to look up
+///
+/// # Returns
+/// * `Option<String>` - The string value if found, or None
+fn get_string_value(map: &HashMap<String, Variant>, key: &str) -> Option<String> {
     match map.get(key) {
         Some(Variant::String(value)) => Some(value.clone()),
         _ => None,
     }
 }
 
-pub(super) fn get_u64_value(map: &HashMap<String, Variant>, key: &str) -> Option<u64> {
+/// Extracts a u64 value from a WMI variant map
+///
+/// # Arguments
+/// * `map` - The WMI data map
+/// * `key` - Key to look up
+///
+/// # Returns
+/// * `Option<u64>` - The u64 value if found, or None
+fn get_u64_value(map: &HashMap<String, Variant>, key: &str) -> Option<u64> {
     match map.get(key) {
         Some(Variant::UI8(value)) => Some(*value),
         _ => None,
     }
 }
 
-pub(super) fn get_bool_value(map: &HashMap<String, Variant>, key: &str) -> Option<bool> {
+/// Extracts a boolean value from a WMI variant map
+///
+/// # Arguments
+/// * `map` - The WMI data map
+/// * `key` - Key to look up
+///
+/// # Returns
+/// * `Option<bool>` - The boolean value if found, or None
+fn get_bool_value(map: &HashMap<String, Variant>, key: &str) -> Option<bool> {
     match map.get(key) {
         Some(Variant::Bool(value)) => Some(*value),
         _ => None,
     }
 }
 
-pub(super) fn create_file_system(fs_type: &str, mount_path: &str) -> Option<FileSystem> {
+/// Creates a FileSystem enum from a file system type string and mount path
+///
+/// # Arguments
+/// * `fs_type` - File system type string (e.g., "NTFS", "FAT32")
+/// * `mount_path` - The mount path of the file system
+///
+/// # Returns
+/// * `Option<FileSystem>` - The appropriate FileSystem variant, or None
+fn create_file_system(fs_type: &str, mount_path: &str) -> Option<FileSystem> {
     let mount_path = mount_path.into();
     match SupportedFileSystem::from(fs_type) {
         SupportedFileSystem::NTFS => Some(FileSystem::NTFS(mount_path)),

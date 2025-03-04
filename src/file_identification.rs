@@ -4,6 +4,13 @@ use infer::MatcherType;
 
 use crate::FileEntry;
 
+/// Convert an infer MatcherType enum to a human-readable string
+///
+/// # Arguments
+/// * `matcher_type` - The MatcherType from infer to convert
+///
+/// # Returns
+/// A String representing the file category
 fn matcher_type_to_string(matcher_type: MatcherType) -> String {
     match matcher_type {
         MatcherType::App => "Application".to_string(),
@@ -19,11 +26,18 @@ fn matcher_type_to_string(matcher_type: MatcherType) -> String {
     }
 }
 
-/// Checks if the file extension matches the content type
+/// Checks if a file extension matches its actual content type
 ///
-/// Returns a tuple containing:
-/// - bool: whether the extension is correct
-/// - Option<String>: the detected MIME type of the file
+/// This function reads the file and attempts to determine its true content type
+/// using file signatures (magic numbers). It then compares this to the extension.
+///
+/// # Arguments
+/// * `file` - A reference to a FileEntry to validate
+///
+/// # Returns
+/// A tuple containing:
+/// - Boolean: whether the extension correctly matches the content type
+/// - Option<String>: the detected MIME type of the file (None if detection failed)
 pub fn validate_file_extension(file: &FileEntry) -> (bool, Option<String>) {
     // Try to detect the file type
     let kind = match infer::get_from_path(file.path()) {
@@ -35,10 +49,9 @@ pub fn validate_file_extension(file: &FileEntry) -> (bool, Option<String>) {
     // Get the file extension (if any)
     let extension = match file.extension() {
         Some(ext) => ext.to_lowercase(),
-        None => return (false, Some(mime_type)), // No extension to validate
+        None => return (false, Some(mime_type)), // No extension but we detected a type
     };
 
-    
     // Common extension mappings by MIME type
     let valid = match kind.mime_type() {
         // Images
@@ -81,19 +94,32 @@ pub fn validate_file_extension(file: &FileEntry) -> (bool, Option<String>) {
     (valid, Some(mime_type))
 }
 
+/// Sorts files into categories based on their content type
+///
+/// This function analyzes each file's content to determine its true type,
+/// regardless of extension, and groups them by category.
+///
+/// # Arguments
+/// * `file_entries` - A vector of FileEntry objects to categorize
+///
+/// # Returns
+/// A HashMap where keys are category names (e.g., "Image", "Document") and
+/// values are vectors of FileEntry objects belonging to that category
+///
+/// # Note
+/// Files that cannot be identified will be skipped and not included in the results
 pub fn identify_files(file_entries: Vec<FileEntry>) -> HashMap<String, Vec<FileEntry>> {
     let mut identified_files = HashMap::new();
 
     for file in file_entries {
-        let kind = infer::get_from_path(file.path())
-            .expect("file read successfully")
-            .expect("file type is known");
-
-        let entry = identified_files
-            .entry(matcher_type_to_string(kind.matcher_type()))
-            .or_insert_with(Vec::new);
-
-        entry.push(file);
+        // Attempt to identify file type, skip files that can't be identified
+        if let Ok(Some(kind)) = infer::get_from_path(file.path()) {
+            let category = matcher_type_to_string(kind.matcher_type());
+            identified_files
+                .entry(category)
+                .or_insert_with(Vec::new)
+                .push(file);
+        }
     }
 
     identified_files
@@ -101,7 +127,17 @@ pub fn identify_files(file_entries: Vec<FileEntry>) -> HashMap<String, Vec<FileE
 
 /// Identifies files with incorrect or misleading extensions
 ///
-/// Returns a list of files whose extensions don't match their content.
+/// This function checks each file to determine if its extension accurately
+/// reflects its actual content type. Files without extensions or with
+/// extensions that don't match their content are reported.
+///
+/// # Arguments
+/// * `file_entries` - A slice of FileEntry objects to check
+///
+/// # Returns
+/// A vector of tuples containing:
+/// - The FileEntry with mismatched extension
+/// - A String containing the actual MIME type of the file
 pub fn find_mismatched_extensions(file_entries: &[FileEntry]) -> Vec<(FileEntry, String)> {
     let mut mismatched = Vec::new();
     
@@ -126,7 +162,7 @@ mod tests {
     use tempfile::tempdir;
     use std::path::PathBuf;
     
-    // Helper function to create a test FileEntry
+    /// Helper function to create a test FileEntry
     fn create_test_file_entry(path: &PathBuf) -> FileEntry {
         // Use From<DirEntry> implementation that's available
         let dir_entry = walkdir::WalkDir::new(path)
@@ -258,11 +294,9 @@ mod tests {
         let file_entries = vec![image_entry.clone(), pdf_entry.clone()];
         
         let identified = identify_files(file_entries);
-
-        println!("{:?}", identified);
         
         assert!(identified.contains_key("Image"), "Should identify an image file");
-        assert!(identified.contains_key("Archive"), "Should identify a archive file");
+        assert!(identified.contains_key("Archive"), "Should identify an archive file");
         
         assert_eq!(identified["Image"].len(), 1);
         assert_eq!(identified["Archive"].len(), 1);
