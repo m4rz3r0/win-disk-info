@@ -1,3 +1,9 @@
+//! This module provides structures for representing file system entries.
+//!
+//! It contains the `FileEntry` struct that encapsulates information about files
+//! and directories, along with supporting error types and utility methods for
+//! working with file system entries.
+
 use std::path::{Path, PathBuf};
 use std::io;
 use chrono::{DateTime, Local};
@@ -9,27 +15,54 @@ use walkdir::DirEntry;
 /// including its path, name, size, modification time, and extension.
 #[derive(Debug, Clone)]
 pub struct FileEntry {
-    // Path details
+    /// Complete path to the file or directory
     path: PathBuf,
+    /// File or directory name without the path
     name: String,
+    /// File extension (if any)
     extension: Option<String>,
     
-    // File metadata
+    /// File size in bytes
     size: u64,
+    /// Last modification timestamp
     modified: DateTime<Local>,
 }
 
 /// Error type for FileEntry creation failures
 #[derive(Debug)]
 pub enum FileEntryError {
+    /// Error occurred when accessing file metadata
     MetadataError(walkdir::Error),
+    /// Error occurred when accessing file timestamps
     TimeError(io::Error),
 }
 
 impl FileEntry {
     /// Creates a new FileEntry from a walkdir::DirEntry.
     ///
-    /// Returns an error if metadata for the entry can't be obtained.
+    /// This method extracts all relevant metadata from the directory entry,
+    /// including path, name, size, and timestamps.
+    ///
+    /// # Arguments
+    ///
+    /// * `entry` - A reference to a walkdir::DirEntry
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, FileEntryError>` - A new FileEntry or an error if metadata retrieval fails
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use walkdir::WalkDir;
+    /// use win_disk_info::FileEntry;
+    ///
+    /// for entry_result in WalkDir::new(".").into_iter().filter_map(Result::ok) {
+    ///     if let Ok(file_entry) = FileEntry::from_dir_entry(&entry_result) {
+    ///         println!("Found: {}, size: {}", file_entry.name(), file_entry.size());
+    ///     }
+    /// }
+    /// ```
     pub fn from_dir_entry(entry: &DirEntry) -> Result<Self, FileEntryError> {
         let path = entry.path().to_path_buf();
         let name = entry.file_name().to_string_lossy().to_string();
@@ -88,6 +121,13 @@ impl FileEntry {
     }
     
     /// Determines if this is a hidden file
+    ///
+    /// On Windows, checks the hidden file attribute.
+    /// On Unix-like systems, checks if the filename starts with a dot.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - true if the file is hidden, false otherwise
     pub fn is_hidden(&self) -> bool {
         #[cfg(windows)]
         {
@@ -108,7 +148,10 @@ impl FileEntry {
     }
 }
 
-// For backward compatibility
+/// For backward compatibility with code that uses the From trait
+///
+/// This implementation provides a way to create a FileEntry from a DirEntry
+/// while handling errors internally to avoid propagating them.
 impl From<DirEntry> for FileEntry {
     fn from(entry: DirEntry) -> Self {
         Self::from_dir_entry(&entry).unwrap_or_else(|err| {
