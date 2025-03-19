@@ -3,7 +3,7 @@
 //! It contains the `Partition` struct that represents a partition on a physical disk,
 //! along with the `FileSystem` enum that categorizes different file system types.
 
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 /// Represents various types of file systems with their mount points.
 ///
@@ -113,5 +113,88 @@ impl Partition {
     /// Returns the available free space in this partition in bytes.
     pub fn available_space(&self) -> u64 {
         self.available_space
+    }
+}
+
+impl fmt::Display for FileSystem {
+    /// Formats the `FileSystem` enum for display.
+    ///
+    /// Provides a string representation of the file system type and its mount points.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FileSystem::BTRFS(paths) => {
+                write!(f, "BTRFS")?;
+                if !paths.is_empty() {
+                    write!(f, " [")?;
+                    for (i, path) in paths.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", path.display())?;
+                    }
+                    write!(f, "]")?;
+                }
+                Ok(())
+            },
+            FileSystem::EXT4(path) => write!(f, "EXT4 [{}]", path.display()),
+            FileSystem::NTFS(path) => write!(f, "NTFS [{}]", path.display()),
+            FileSystem::FAT32(path) => write!(f, "FAT32 [{}]", path.display()),
+            FileSystem::EXFAT(path) => write!(f, "exFAT [{}]", path.display()),
+            FileSystem::XFS(path) => write!(f, "XFS [{}]", path.display()),
+            FileSystem::ZFS(path) => write!(f, "ZFS [{}]", path.display()),
+            FileSystem::NotImplemented(name, path) => write!(f, "{} [{}]", name, path.display()),
+            FileSystem::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
+impl fmt::Display for Partition {
+    /// Formats the `Partition` struct for display.
+    ///
+    /// Provides a detailed representation of the partition including:
+    /// - Name and ID
+    /// - File system type and mount point(s)
+    /// - Total and available space
+    /// - Usage percentage
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Calculate used space and usage percentage
+        let used_space = self.total_space - self.available_space;
+        let usage_percent = if self.total_space > 0 {
+            (used_space as f64 / self.total_space as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        // Format space values in appropriate units
+        let format_bytes = |bytes: u64| -> (f64, &'static str) {
+            if bytes >= 1_099_511_627_776 { // 1 TiB
+                (bytes as f64 / 1_099_511_627_776.0, "TiB")
+            } else if bytes >= 1_073_741_824 { // 1 GiB
+                (bytes as f64 / 1_073_741_824.0, "GiB")
+            } else if bytes >= 1_048_576 { // 1 MiB
+                (bytes as f64 / 1_048_576.0, "MiB")
+            } else if bytes >= 1_024 { // 1 KiB
+                (bytes as f64 / 1_024.0, "KiB")
+            } else {
+                (bytes as f64, "bytes")
+            }
+        };
+        
+        let (total_val, total_unit) = format_bytes(self.total_space);
+        let (used_val, used_unit) = format_bytes(used_space);
+        let (avail_val, avail_unit) = format_bytes(self.available_space);
+        
+        // Write formatted output
+        write!(
+            f,
+            "Partition {}: {}\n  File System: {}\n  Space: {:.2} {} total, {:.2} {} used ({:.1}%), {:.2} {} free",
+            self.id,
+            self.name,
+            self.file_system,
+            total_val, total_unit,
+            used_val, used_unit,
+            usage_percent,
+            avail_val, avail_unit
+        )
     }
 }

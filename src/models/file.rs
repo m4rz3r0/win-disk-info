@@ -5,7 +5,7 @@
 //! working with file system entries.
 
 use std::path::{Path, PathBuf};
-use std::io;
+use std::{fmt, io};
 use chrono::{DateTime, Local};
 use walkdir::DirEntry;
 
@@ -168,5 +168,50 @@ impl From<DirEntry> for FileEntry {
                 extension: None,
             }
         })
+    }
+}
+
+impl fmt::Display for FileEntry {
+    /// Formats the `FileEntry` struct for display.
+    ///
+    /// Provides a detailed representation of the file entry including:
+    /// - Name and path
+    /// - Type (file/directory) and extension
+    /// - Size in appropriate units
+    /// - Last modification timestamp
+    /// - Hidden status
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Determine if it's a file or directory
+        let entry_type = if self.path.is_dir() { "Directory" } else { "File" };
+        
+        // Format file size in appropriate units
+        let (size_value, size_unit) = if self.size >= 1_000_000_000 {
+            (self.size as f64 / 1_000_000_000.0, "GB")
+        } else if self.size >= 1_000_000 {
+            (self.size as f64 / 1_000_000.0, "MB")
+        } else if self.size >= 1_000 {
+            (self.size as f64 / 1_000.0, "KB")
+        } else {
+            (self.size as f64, "bytes")
+        };
+        
+        // Format modification time
+        let mod_time = self.modified.format("%Y-%m-%d %H:%M:%S");
+        
+        // Format hidden status
+        let hidden_status = if self.is_hidden() { " (Hidden)" } else { "" };
+        
+        // Write formatted output
+        write!(
+            f,
+            "{}{}\n  Type: {}\n  Path: {}\n  Size: {:.2} {}\n  Modified: {}",
+            self.name,
+            hidden_status,
+            entry_type,
+            self.path.display(),
+            size_value,
+            size_unit,
+            mod_time
+        )
     }
 }

@@ -3,6 +3,8 @@
 //! It contains the primary `Disk` struct and supporting enum types that model
 //! the characteristics and state of storage devices in the system.
 
+use core::fmt;
+
 use crate::Partition;
 
 /// Represents the physical type of a storage device.
@@ -132,5 +134,103 @@ impl Disk {
     /// Returns a slice containing all partitions on this disk.
     pub fn partitions(&self) -> &[Partition] {
         &self.partitions
+    }
+}
+
+impl fmt::Display for Disk {
+    /// Formats the `Disk` struct for display.
+    ///
+    /// This implementation provides a comprehensive multi-line view of the disk,
+    /// including device name, model, capacity, type, serial number, and detailed
+    /// information about each partition on the disk.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Format disk size in appropriate units
+        let (size_value, size_unit) = if self.size >= 1_099_511_627_776 {
+            (self.size as f64 / 1_099_511_627_776.0, "TiB")
+        } else if self.size >= 1_073_741_824 {
+            (self.size as f64 / 1_073_741_824.0, "GiB")
+        } else if self.size >= 1_048_576 {
+            (self.size as f64 / 1_048_576.0, "MiB")
+        } else if self.size >= 1_024 {
+            (self.size as f64 / 1_024.0, "KiB")
+        } else {
+            (self.size as f64, "bytes")
+        };
+
+        // Format disk kind as a string
+        let kind_str = match &self.kind {
+            DiskKind::HDD => "HDD",
+            DiskKind::SSD => "SSD",
+            DiskKind::SCM => "SCM",
+            DiskKind::Unknown(val) => return write!(f, "Unknown Disk Type ({})", val),
+        };
+
+        // Write basic disk information
+        write!(
+            f,
+            "{}\n  Device: {}\n  Type: {}{}\n  Capacity: {:.2} {}\n  Serial: {}\n  Partitions: {}",
+            self.model,
+            self.device_name,
+            kind_str,
+            if self.removable { " (Removable)" } else { "" },
+            size_value,
+            size_unit,
+            if self.serial.is_empty() { "N/A" } else { &self.serial },
+            self.partitions.len()
+        )?;
+
+        // Calculate total allocated space
+        let total_allocated: u64 = self.partitions
+            .iter()
+            .map(|p| p.total_space())
+            .sum();
+
+        // If there are partitions, include their details
+        if !self.partitions.is_empty() {
+            writeln!(f, "\n\nPartition Details:")?;
+            
+            for (i, partition) in self.partitions.iter().enumerate() {
+                // Add separator between partitions except before the first one
+                if i > 0 {
+                    writeln!(f, "\n  {}", "-".repeat(50))?;
+                }
+                
+                // Indent and format each partition
+                let partition_str = format!("{}", partition);
+                let indented_lines: Vec<String> = partition_str
+                    .lines()
+                    .enumerate()
+                    .map(|(j, line)| {
+                        if j == 0 {
+                            format!("  {}", line)
+                        } else {
+                            format!("    {}", line)
+                        }
+                    })
+                    .collect();
+                
+                writeln!(f, "{}", indented_lines.join("\n"))?;
+            }
+            
+            // Calculate and display unallocated space if any
+            let unallocated = self.size as u64 - total_allocated;
+            if unallocated > 1024 { // Only show if significant
+                let (unalloc_val, unalloc_unit) = if unallocated >= 1_099_511_627_776 {
+                    (unallocated as f64 / 1_099_511_627_776.0, "TiB")
+                } else if unallocated >= 1_073_741_824 {
+                    (unallocated as f64 / 1_073_741_824.0, "GiB")
+                } else if unallocated >= 1_048_576 {
+                    (unallocated as f64 / 1_048_576.0, "MiB")
+                } else if unallocated >= 1_024 {
+                    (unallocated as f64 / 1_024.0, "KiB")
+                } else {
+                    (unallocated as f64, "bytes")
+                };
+                
+                writeln!(f, "\n  Unallocated space: {:.2} {}", unalloc_val, unalloc_unit)?;
+            }
+        }
+        
+        Ok(())
     }
 }
