@@ -5,11 +5,15 @@
 
 use std::{fmt, path::PathBuf};
 
+#[cfg(feature = "serialize")]
+use serde::Serialize;
+
 /// Represents various types of file systems with their mount points.
 ///
 /// Each variant contains the path(s) where the file system is mounted.
 /// Some file systems like BTRFS can have multiple mount points.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 pub enum FileSystem {
     /// BTRFS file system with potentially multiple mount points
     BTRFS(Vec<PathBuf>),
@@ -36,6 +40,7 @@ pub enum FileSystem {
 /// Contains information about a disk partition including its identifier,
 /// name, file system type, and space usage statistics.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 pub struct Partition {
     /// Unique identifier for this partition
     id: usize,

@@ -9,11 +9,15 @@ use std::{fmt, io};
 use chrono::{DateTime, Local};
 use walkdir::DirEntry;
 
+#[cfg(feature = "serialize")]
+use serde::Serialize;
+
 /// Represents a file system entry with its metadata.
 /// 
 /// This structure holds information about a file or directory
 /// including its path, name, size, modification time, and extension.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 pub struct FileEntry {
     /// Complete path to the file or directory
     path: PathBuf,

@@ -5,12 +5,16 @@
 
 use core::fmt;
 
+#[cfg(feature = "serialize")]
+use serde::Serialize;
+
 use crate::Partition;
 
 /// Represents the physical type of a storage device.
 ///
 /// This enum categorizes disks by their underlying storage technology.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 pub enum DiskKind {
     /// Hard Disk Drive - traditional mechanical storage
     HDD,
@@ -36,6 +40,7 @@ impl Default for DiskKind {
 /// The `Disk` struct contains comprehensive information about a storage device,
 /// including its hardware details and associated partitions.
 #[derive(Default, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 pub struct Disk {
     /// Physical device identifier (e.g., "\\\\.\\PHYSICALDRIVE0")
     device_name: String,
@@ -162,7 +167,7 @@ impl fmt::Display for Disk {
             DiskKind::HDD => "HDD",
             DiskKind::SSD => "SSD",
             DiskKind::SCM => "SCM",
-            DiskKind::Unknown(val) => return write!(f, "Unknown Disk Type ({})", val),
+            DiskKind::Unknown(val) => &format!("Unknown Disk Type ({})", val),
         };
 
         // Write basic disk information
@@ -213,7 +218,8 @@ impl fmt::Display for Disk {
             }
             
             // Calculate and display unallocated space if any
-            let unallocated = self.size as u64 - total_allocated;
+            let unallocated = self.size as i64 - total_allocated as i64;
+            println!("unallocated: {}", unallocated);
             if unallocated > 1024 { // Only show if significant
                 let (unalloc_val, unalloc_unit) = if unallocated >= 1_099_511_627_776 {
                     (unallocated as f64 / 1_099_511_627_776.0, "TiB")
