@@ -219,7 +219,6 @@ impl fmt::Display for Disk {
             
             // Calculate and display unallocated space if any
             let unallocated = self.size as i64 - total_allocated as i64;
-            println!("unallocated: {}", unallocated);
             if unallocated > 1024 { // Only show if significant
                 let (unalloc_val, unalloc_unit) = if unallocated >= 1_099_511_627_776 {
                     (unallocated as f64 / 1_099_511_627_776.0, "TiB")
